@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { User } from '@supabase/supabase-js'
+import { User } from '@supabase/supabase-js';
 import { createClient } from '@/app/utils/supabase/client';
 
 export default function DashboardPage() {
@@ -35,7 +35,11 @@ export default function DashboardPage() {
       {/* Top bar */}
       <header className="bg-blue-700 text-white px-8 py-4 flex items-center justify-between shadow">
         <h1 className="text-2xl font-bold">Dashboard Ama-Timon</h1>
-        <span className="font-medium">Usuário: {user.user_metadata?.name || user.email}</span>
+        {user && (
+          <span className="font-medium">
+            Usuário: {user.user_metadata?.name || user.email}
+          </span>
+        )}
       </header>
       
       {/* Main dashboard area */}
