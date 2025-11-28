@@ -9,5 +9,8 @@ export const config = {
   matcher: [
     "/cadastros/:path*",
     "/dashboard/:path*",
+    "/PessoaTEA/:path*",
   ],
 };
+
+
