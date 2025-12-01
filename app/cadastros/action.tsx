@@ -55,6 +55,7 @@ export const initialState: PacienteFields = {
   observacoes: '',
 };
 
+// Faz upload e retorna APENAS o path interno
 export async function uploadFileToStorage(file: File, bucket: string, userId: string) {
   const supabase = createClient();
 
@@ -75,8 +76,8 @@ export async function uploadFileToStorage(file: File, bucket: string, userId: st
     throw new Error(`Erro ao enviar arquivo (${bucket}): ${error.message}`);
   }
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
-  return data?.publicUrl ?? '';
+  // retorna só o caminho interno do arquivo no bucket
+  return filePath;
 }
 
 export async function cadastrarPaciente(
@@ -95,7 +96,6 @@ export async function cadastrarPaciente(
 
   const fileUrls: Partial<Record<FileField, string>> = {};
 
-  // Nomes dos buckets exatamente como estão no Supabase
   const buckets: Record<FileField, string> = {
     foto: 'foto',
     documento: 'documento',
@@ -106,6 +106,7 @@ export async function cadastrarPaciente(
   for (const key of Object.keys(files) as FileField[]) {
     const file = files[key];
     if (file) {
+      //  PATH, não URL pública
       fileUrls[key] = await uploadFileToStorage(file, buckets[key], user.id);
     }
   }

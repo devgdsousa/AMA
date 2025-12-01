@@ -38,7 +38,8 @@ export const updateSession = async (request: NextRequest) => {
 
   const isProtected =
     request.nextUrl.pathname.startsWith("/cadastros") ||
-    request.nextUrl.pathname.startsWith("/dashboard");
+    request.nextUrl.pathname.startsWith("/dashboard") ||
+    request.nextUrl.pathname.startsWith("/PessoaTEA");
 
   if (isProtected && !user) {
     const redirectUrl = new URL("/login", request.url);

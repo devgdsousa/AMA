@@ -1,4 +1,4 @@
-// app/cadastros/page.tsx
+
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -10,7 +10,7 @@ import { Footer } from '@/app/components/ui/footer';
 type Cadastro = {
   id: number;
   nome: string;
-  foto: string | null;
+  foto: string | null; // aqui é o PATH salvo no banco (ex: userId/arquivo.png)
   data_nascimento: string | null;
   responsaveis: string | null;
   cpf: string | null;
@@ -31,9 +31,11 @@ type Cadastro = {
   observacoes: string | null;
 };
 
+type CadastroComUrl = Cadastro & { fotoUrl?: string | null };
+
 export default function ListaPerfisPage() {
-  const [lista, setLista] = useState<Cadastro[]>([]);
-  const [selecionado, setSelecionado] = useState<Cadastro | null>(null);
+  const [lista, setLista] = useState<CadastroComUrl[]>([]);
+  const [selecionado, setSelecionado] = useState<CadastroComUrl | null>(null);
   const [busca, setBusca] = useState('');
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
@@ -50,8 +52,27 @@ export default function ListaPerfisPage() {
         if (error) {
           setErro('Não foi possível carregar a lista de cadastros.');
         } else if (data) {
-          setLista(data as Cadastro[]);
-          setSelecionado((data as Cadastro[])[0] ?? null);
+          const baseLista = data as Cadastro[];
+
+          // gerar signed URL para cada foto (se existir path)
+          const listaComUrls: CadastroComUrl[] = [];
+          for (const item of baseLista) {
+            let fotoUrl: string | null | undefined = null;
+            if (item.foto) {
+              const { data: signed, error: signedError } =
+                await supabase.storage
+                  .from('foto')
+                  .createSignedUrl(item.foto, 60 * 60); // 1 hora
+
+              if (!signedError) {
+                fotoUrl = signed?.signedUrl ?? null;
+              }
+            }
+            listaComUrls.push({ ...item, fotoUrl });
+          }
+
+          setLista(listaComUrls);
+          setSelecionado(listaComUrls[0] ?? null);
         }
       } catch {
         setErro('Erro inesperado ao carregar os dados.');
@@ -122,9 +143,9 @@ export default function ListaPerfisPage() {
                     onClick={() => setSelecionado(p)}
                   >
                     <div className="relative w-10 h-10 rounded-full overflow-hidden bg-emerald-100 shrink-0">
-                      {p.foto ? (
+                      {p.fotoUrl ? (
                         <Image
-                          src={p.foto}
+                          src={p.fotoUrl}
                           alt={p.nome}
                           fill
                           className="object-cover"
@@ -171,14 +192,14 @@ export default function ListaPerfisPage() {
 
 /* Componentes auxiliares */
 
-function PerfilDetalhe({ paciente }: { paciente: Cadastro }) {
+function PerfilDetalhe({ paciente }: { paciente: CadastroComUrl }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
         <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden border-4 border-white shadow-md bg-emerald-900/20">
-          {paciente.foto ? (
+          {paciente.fotoUrl ? (
             <Image
-              src={paciente.foto}
+              src={paciente.fotoUrl}
               alt={paciente.nome}
               fill
               className="object-cover"
@@ -193,9 +214,11 @@ function PerfilDetalhe({ paciente }: { paciente: Cadastro }) {
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
             {paciente.nome}
           </h2>
-          <p className="text-sm text-slate-600 mt-1">
-            CPF: <span className="font-medium">{paciente.cpf}</span>
-          </p>
+          {paciente.cpf && (
+            <p className="text-sm text-slate-600 mt-1">
+              CPF: <span className="font-medium">{paciente.cpf}</span>
+            </p>
+          )}
           {paciente.responsaveis && (
             <p className="text-sm text-slate-600">
               Responsáveis:{' '}
