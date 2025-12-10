@@ -1,16 +1,23 @@
-
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/app/utils/supabase/client';
 import { SearchInput } from '@/app/components/ui/search';
 import { Footer } from '@/app/components/ui/footer';
+import { Button } from '@/app/components/ui/button';
+import { Navbar } from '../components/ui/navbar';
+import { useReactToPrint } from 'react-to-print';
 
+// Tipos base
 type Cadastro = {
   id: number;
   nome: string;
-  foto: string | null; // aqui é o PATH salvo no banco (ex: userId/arquivo.png)
+  foto: string | null;
+  documento: string | null;
+  documento_responsaveis: string | null;
+  laudo: string | null;
   data_nascimento: string | null;
   responsaveis: string | null;
   cpf: string | null;
@@ -31,7 +38,12 @@ type Cadastro = {
   observacoes: string | null;
 };
 
-type CadastroComUrl = Cadastro & { fotoUrl?: string | null };
+type CadastroComUrl = Cadastro & {
+  fotoUrl?: string | null;
+  documentoUrl?: string | null;
+  documentoResponsaveisUrl?: string | null;
+  laudoUrl?: string | null;
+};
 
 export default function ListaPerfisPage() {
   const [lista, setLista] = useState<CadastroComUrl[]>([]);
@@ -39,6 +51,16 @@ export default function ListaPerfisPage() {
   const [busca, setBusca] = useState('');
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const router = useRouter();
+
+  // Ref do conteúdo que será impresso (currículo)
+  const printRef = useRef<HTMLDivElement | null>(null);
+
+  // Hook do react-to-print (v3) usando contentRef
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+  });
 
   useEffect(() => {
     async function carregarCadastros() {
@@ -51,29 +73,67 @@ export default function ListaPerfisPage() {
 
         if (error) {
           setErro('Não foi possível carregar a lista de cadastros.');
-        } else if (data) {
-          const baseLista = data as Cadastro[];
+          return;
+        }
+        if (!data) {
+          setLista([]);
+          setSelecionado(null);
+          return;
+        }
 
-          // gerar signed URL para cada foto (se existir path)
-          const listaComUrls: CadastroComUrl[] = [];
-          for (const item of baseLista) {
-            let fotoUrl: string | null | undefined = null;
-            if (item.foto) {
-              const { data: signed, error: signedError } =
-                await supabase.storage
-                  .from('foto')
-                  .createSignedUrl(item.foto, 60 * 60); // 1 hora
+        const baseLista = data as Cadastro[];
+        const listaComUrls: CadastroComUrl[] = [];
 
-              if (!signedError) {
-                fotoUrl = signed?.signedUrl ?? null;
-              }
-            }
-            listaComUrls.push({ ...item, fotoUrl });
+        for (const item of baseLista) {
+          let fotoUrl: string | null = null;
+          let documentoUrl: string | null = null;
+          let documentoResponsaveisUrl: string | null = null;
+          let laudoUrl: string | null = null;
+
+          if (item.foto) {
+            const { data: signed, error: signedError } =
+              await supabase.storage
+                .from('foto')
+                .createSignedUrl(item.foto, 60 * 60);
+            if (!signedError) fotoUrl = signed?.signedUrl ?? null;
           }
 
-          setLista(listaComUrls);
-          setSelecionado(listaComUrls[0] ?? null);
+          if (item.documento) {
+            const { data: signed, error: signedError } =
+              await supabase.storage
+                .from('documento')
+                .createSignedUrl(item.documento, 60 * 60);
+            if (!signedError) documentoUrl = signed?.signedUrl ?? null;
+          }
+
+          if (item.documento_responsaveis) {
+            const { data: signed, error: signedError } =
+              await supabase.storage
+                .from('documento_responsaveis')
+                .createSignedUrl(item.documento_responsaveis, 60 * 60);
+            if (!signedError)
+              documentoResponsaveisUrl = signed?.signedUrl ?? null;
+          }
+
+          if (item.laudo) {
+            const { data: signed, error: signedError } =
+              await supabase.storage
+                .from('laudo')
+                .createSignedUrl(item.laudo, 60 * 60);
+            if (!signedError) laudoUrl = signed?.signedUrl ?? null;
+          }
+
+          listaComUrls.push({
+            ...item,
+            fotoUrl,
+            documentoUrl,
+            documentoResponsaveisUrl,
+            laudoUrl,
+          });
         }
+
+        setLista(listaComUrls);
+        setSelecionado(listaComUrls[0] ?? null);
       } catch {
         setErro('Erro inesperado ao carregar os dados.');
       } finally {
@@ -90,6 +150,24 @@ export default function ListaPerfisPage() {
     return lista.filter(p => p.nome.toLowerCase().includes(termo));
   }, [busca, lista]);
 
+  async function handleDelete(id: number) {
+    if (!confirm('Tem certeza que deseja excluir este cadastro?')) return;
+    setActionLoading(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('cadastros').delete().eq('id', id);
+      if (error) {
+        alert('Erro ao excluir cadastro: ' + error.message);
+        return;
+      }
+      const novaLista = lista.filter(p => p.id !== id);
+      setLista(novaLista);
+      setSelecionado(novaLista[0] ?? null);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100">
@@ -101,8 +179,9 @@ export default function ListaPerfisPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100">
-      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:py-10">
+    <div className="min-h-screen flex flex-col bg-[#f5f0e6]">
+      <Navbar/>
+      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 md:py-10 no-print">
         <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-6">
           Pessoas com TEA cadastradas
         </h1>
@@ -172,20 +251,54 @@ export default function ListaPerfisPage() {
             </div>
           </aside>
 
-          {/* Coluna direita: perfil detalhado */}
-          <section className="md:w-2/3 p-6 md:p-8">
+          {/* Coluna direita: perfil detalhado + impressão */}
+          <section className="md:w-2/3 p-6 md:p-8 flex flex-col gap-4">
             {!selecionado ? (
               <p className="text-sm text-slate-500">
-                Selecione uma pessoa na lista ao lado para visualizar os detalhes.
+                Selecione uma pessoa na lista ao lado para visualizar os
+                detalhes.
               </p>
             ) : (
-              <PerfilDetalhe paciente={selecionado} />
+              <>
+                <PerfilDetalhe paciente={selecionado} />
+
+                {/* Conteúdo que será impresso (currículo) */}
+                <div ref={printRef} className="hidden print:block">
+                  <PerfilCurriculoPrint paciente={selecionado} />
+                </div>
+
+                <div className="flex flex-wrap gap-3 justify-end pt-2 border-t border-slate-200 mt-2">
+                  <Button
+                    type="button"
+                    onClick={handlePrint}
+                    className="px-4 py-2 rounded-md text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                    disabled={actionLoading}
+                  >
+                    Imprimir 
+                  </Button>
+
+                  <Button
+                    onClick={() => router.push(`/editar/${selecionado.id}`)}
+                    className="px-4 py-2 rounded-md text-sm font-semibold bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-60"
+                    disabled={actionLoading}
+                  >
+                    Editar dados
+                  </Button>
+                  <Button
+                    onClick={() => handleDelete(selecionado.id)}
+                    className="px-4 py-2 rounded-md text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+                    disabled={actionLoading}
+                  >
+                    Excluir cadastro
+                  </Button>
+                </div>
+              </>
             )}
           </section>
         </div>
       </main>
 
-      <Footer />
+      <Footer  />
     </div>
   );
 }
@@ -233,7 +346,10 @@ function PerfilDetalhe({ paciente }: { paciente: CadastroComUrl }) {
           <SectionTitle>Dados pessoais</SectionTitle>
           <Field label="Data de nascimento" value={paciente.data_nascimento} />
           <Field label="Contatos" value={paciente.contatos} />
-          <Field label="Pessoas na residência" value={paciente.pessoas_residencia} />
+          <Field
+            label="Pessoas na residência"
+            value={paciente.pessoas_residencia}
+          />
           <Field label="Situação da casa" value={paciente.casa_situacao} />
           <Field label="Recebe benefício" value={paciente.recebe_beneficio} />
         </div>
@@ -244,7 +360,10 @@ function PerfilDetalhe({ paciente }: { paciente: CadastroComUrl }) {
           <Field label="CID" value={paciente.cid} />
           <Field label="Tratamentos" value={paciente.tratamentos} />
           <Field label="Medicações" value={paciente.medicacoes} />
-          <Field label="Local de atendimento" value={paciente.local_atendimento} />
+          <Field
+            label="Local de atendimento"
+            value={paciente.local_atendimento}
+          />
         </div>
 
         <div className="space-y-3 md:col-span-2">
@@ -281,6 +400,232 @@ function PerfilDetalhe({ paciente }: { paciente: CadastroComUrl }) {
             </p>
           </div>
         )}
+
+        <div className="space-y-3 md:col-span-2">
+          <SectionTitle>Documentos</SectionTitle>
+          <div className="flex flex-wrap gap-3 text-sm">
+            {paciente.documentoUrl && (
+              <a
+                href={paciente.documentoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center px-3 py-1.5 rounded-md border border-slate-300 text-slate-800 hover:bg-slate-100"
+              >
+                Documento da pessoa (PDF / imagem)
+              </a>
+            )}
+            {paciente.documentoResponsaveisUrl && (
+              <a
+                href={paciente.documentoResponsaveisUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center px-3 py-1.5 rounded-md border border-slate-300 text-slate-800 hover:bg-slate-100"
+              >
+                Documento dos responsáveis
+              </a>
+            )}
+            {paciente.laudoUrl && (
+              <a
+                href={paciente.laudoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center px-3 py-1.5 rounded-md border border-slate-300 text-slate-800 hover:bg-slate-100"
+              >
+                Laudo médico (PDF / imagem)
+              </a>
+            )}
+            {!paciente.documentoUrl &&
+              !paciente.documentoResponsaveisUrl &&
+              !paciente.laudoUrl && (
+                <p className="text-sm text-slate-500">
+                  Nenhum documento enviado para este cadastro.
+                </p>
+              )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Currículo imprimível */
+
+function PerfilCurriculoPrint({ paciente }: { paciente: CadastroComUrl }) {
+  return (
+    <div className="min-h-screen flex justify-center items-start bg-white p-8">
+      <div className="w-full max-w-2xl text-slate-900 text-sm leading-relaxed">
+        {/* Cabeçalho com foto e dados principais */}
+        <div className="flex items-start gap-4 mb-6">
+          {paciente.fotoUrl && (
+            <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0 border border-slate-300">
+              {/* na impressão, <img> simples evita problemas */}
+              <img
+                src={paciente.fotoUrl}
+                alt={paciente.nome}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          <div className="flex-1">
+            <h1 className="text-xl font-bold mb-1">
+              {paciente.nome}
+            </h1>
+
+            {paciente.cpf && (
+              <p className="text-[13px]">
+                <span className="font-semibold">CPF: </span>
+                {paciente.cpf}
+              </p>
+            )}
+
+            {paciente.contatos && (
+              <p className="text-[13px]">
+                <span className="font-semibold">Contato: </span>
+                {paciente.contatos}
+              </p>
+            )}
+
+            {paciente.instituicao_ensino && (
+              <p className="text-[13px]">
+                <span className="font-semibold">Instituição de ensino: </span>
+                {paciente.instituicao_ensino}
+              </p>
+            )}
+
+            {paciente.endereco_escola && (
+              <p className="text-[13px]">
+                <span className="font-semibold">Endereço: </span>
+                {paciente.endereco_escola}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Objetivo / Resumo clínico */}
+        {(paciente.diagnostico || paciente.observacoes) && (
+          <section className="mb-4">
+            <h2 className="font-semibold text-[13px] uppercase tracking-wide mb-1">
+              Observações / Resumo
+            </h2>
+            {paciente.diagnostico && (
+              <p className="text-[13px] mb-1">
+                <span className="font-semibold">Diagnóstico principal: </span>
+                {paciente.diagnostico}
+              </p>
+            )}
+            {paciente.observacoes && (
+              <p className="text-[13px] whitespace-pre-line">
+                {paciente.observacoes}
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* Dados pessoais */}
+        <section className="mb-4">
+          <h2 className="font-semibold text-[13px] uppercase tracking-wide mb-1">
+            Dados pessoais
+          </h2>
+          <ul className="text-[13px] space-y-0.5">
+            {paciente.data_nascimento && (
+              <li>
+                <span className="font-semibold">Data de nascimento: </span>
+                {paciente.data_nascimento}
+              </li>
+            )}
+            {paciente.responsaveis && (
+              <li>
+                <span className="font-semibold">Responsáveis: </span>
+                {paciente.responsaveis}
+              </li>
+            )}
+            {paciente.pessoas_residencia && (
+              <li>
+                <span className="font-semibold">Pessoas na residência: </span>
+                {paciente.pessoas_residencia}
+              </li>
+            )}
+            {paciente.casa_situacao && (
+              <li>
+                <span className="font-semibold">Situação da casa: </span>
+                {paciente.casa_situacao}
+              </li>
+            )}
+            {paciente.recebe_beneficio && (
+              <li>
+                <span className="font-semibold">Recebe benefício: </span>
+                {paciente.recebe_beneficio}
+              </li>
+            )}
+          </ul>
+        </section>
+
+        {/* Informações clínicas */}
+        <section className="mb-4">
+          <h2 className="font-semibold text-[13px] uppercase tracking-wide mb-1">
+            Informações clínicas
+          </h2>
+          <ul className="text-[13px] space-y-0.5">
+            {paciente.cid && (
+              <li>
+                <span className="font-semibold">CID: </span>
+                {paciente.cid}
+              </li>
+            )}
+            {paciente.tratamentos && (
+              <li>
+                <span className="font-semibold">Tratamentos: </span>
+                {paciente.tratamentos}
+              </li>
+            )}
+            {paciente.medicacoes && (
+              <li>
+                <span className="font-semibold">Medicações: </span>
+                {paciente.medicacoes}
+              </li>
+            )}
+            {paciente.local_atendimento && (
+              <li>
+                <span className="font-semibold">Local de atendimento: </span>
+                {paciente.local_atendimento}
+              </li>
+            )}
+          </ul>
+        </section>
+
+        {/* Situação socioeconômica e escolar */}
+        <section className="mb-4">
+          <h2 className="font-semibold text-[13px] uppercase tracking-wide mb-1">
+            Situação socioeconômica e escolar
+          </h2>
+          <ul className="text-[13px] space-y-0.5">
+            {paciente.renda_bruta_familiar && (
+              <li>
+                <span className="font-semibold">Renda bruta familiar: </span>
+                {paciente.renda_bruta_familiar}
+              </li>
+            )}
+            {paciente.nivel_escolaridade && (
+              <li>
+                <span className="font-semibold">Nível de escolaridade: </span>
+                {paciente.nivel_escolaridade}
+              </li>
+            )}
+            {paciente.acompanhamento_especializado && (
+              <li>
+                <span className="font-semibold">
+                  Acompanhamento especializado:{' '}
+                </span>
+                {paciente.acompanhamento_especializado}
+              </li>
+            )}
+          </ul>
+        </section>
+
+        {/* Rodapé simples se quiser data / assinatura */}
+        <section className="mt-6 text-[12px] text-slate-500">
+          <p>Gerado pelo sistema em {new Date().toLocaleDateString('pt-BR')}</p>
+        </section>
       </div>
     </div>
   );
@@ -294,7 +639,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Field({ label, value }: { label: string; value: string | null }) {
+function Field({ label, value }: { label: string | null; value: string | null }) {
   if (!value) return null;
   return (
     <div>

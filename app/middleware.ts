@@ -1,3 +1,4 @@
+// middleware.ts na raiz
 import { type NextRequest } from "next/server";
 import { updateSession } from "@/app/utils/supabase/middleware";
 
@@ -10,7 +11,9 @@ export const config = {
     "/cadastros/:path*",
     "/dashboard/:path*",
     "/PessoaTEA/:path*",
+    "/editar/:path*",
+    "/admin/usuarios/:path*",
+    "/relatorios/:path*", 
+    "/consulta:path*"  
   ],
 };
-
-

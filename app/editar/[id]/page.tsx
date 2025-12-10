@@ -1,100 +1,130 @@
+// app/editar/[id]/page.tsx
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import {
   initialState,
   fileTypes,
   FileField,
   PacienteFields,
-  cadastrarPaciente,
+  uploadFileToStorage,
 } from '@/app/cadastros/action';
 import { Footer } from '@/app/components/ui/footer';
-import { Button } from '@/app/components/ui/button'
-import { Input }  from '@/app/components/ui/input'
-import { Navbar } from '../components/ui/navbar';
+import { createClient } from '@/app/utils/supabase/client';
+import { Input } from '@/app/components/ui/input';
+import { Button } from '@/app/components/ui/button';
+import { Navbar } from '@/app/components/ui/navbar';
 
-// Helpers de formatação
-function onlyDigits(value: string) {
-  return value.replace(/\D/g, '');
-}
 
-function formatCpf(value: string) {
-  const digits = onlyDigits(value).slice(0, 11);
-  const part1 = digits.slice(0, 3);
-  const part2 = digits.slice(3, 6);
-  const part3 = digits.slice(6, 9);
-  const part4 = digits.slice(9, 11);
-  let result = part1;
-  if (part2) result += '.' + part2;
-  if (part3) result += '.' + part3;
-  if (part4) result += '-' + part4;
-  return result;
-}
+type PacienteComArquivos = PacienteFields & {
+  foto: string | null;
+  documento: string | null;
+  documento_responsaveis: string | null;
+  laudo: string | null;
+};
 
-function formatPhoneBr(value: string) {
-  const digits = onlyDigits(value).slice(0, 11); 
-  const ddd = digits.slice(0, 2);
-  const part1 = digits.slice(2, 7);
-  const part2 = digits.slice(7, 11);
-  let result = '';
-  if (ddd) result = `(${ddd}`;
-  if (ddd.length === 2) result += ') ';
-  if (part1) result += part1;
-  if (part2) result += '-' + part2;
-  return result;
-}
 
-function formatCurrencyBr(value: string) {
-  const digits = onlyDigits(value);
-  if (!digits) return '';
-  const int = BigInt(digits);
-  const centsStr = int.toString().padStart(3, '0');
-  const inteiro = centsStr.slice(0, -2);
-  const frac = centsStr.slice(-2);
-  const inteiroFmt = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `R$ ${inteiroFmt},${frac}`;
-}
+export default function EditarPacientePage() {
+  const params = useParams<{ id: string }>();
+  const id = params.id;
 
-export default function CadastroPacientePage() {
+
   const [fields, setFields] = useState<PacienteFields>(initialState);
   const [files, setFiles] = useState<Partial<Record<FileField, File>>>({});
+  const [currentPaths, setCurrentPaths] = useState<
+    Partial<Record<FileField, string | null>>
+  >({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+
+  // Carrega dados existentes
+  useEffect(() => {
+    if (!id) {
+      setError('ID do cadastro não foi informado na URL.');
+      setLoading(false);
+      return;
+    }
+
+
+    async function loadPaciente() {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('cadastros')
+          .select('*')
+          .eq('id', Number(id))
+          .single();
+
+
+        if (error || !data) {
+          setError('Não foi possível carregar os dados do cadastro.');
+          return;
+        }
+
+
+        const p = data as PacienteComArquivos;
+
+
+        setFields({
+          nome: p.nome,
+          data_nascimento: p.data_nascimento ?? '',
+          responsaveis: p.responsaveis ?? '',
+          cpf: p.cpf ?? '',
+          contatos: p.contatos ?? '',
+          diagnostico: p.diagnostico ?? '',
+          cid: p.cid ?? '',
+          tratamentos: p.tratamentos ?? '',
+          medicacoes: p.medicacoes ?? '',
+          local_atendimento: p.local_atendimento ?? '',
+          renda_bruta_familiar: p.renda_bruta_familiar ?? '',
+          pessoas_residencia: p.pessoas_residencia ?? '',
+          casa_situacao: p.casa_situacao ?? '',
+          recebe_beneficio: p.recebe_beneficio ?? '',
+          instituicao_ensino: p.instituicao_ensino ?? '',
+          endereco_escola: p.endereco_escola ?? '',
+          nivel_escolaridade: p.nivel_escolaridade ?? '',
+          acompanhamento_especializado: p.acompanhamento_especializado ?? '',
+          observacoes: p.observacoes ?? '',
+        });
+
+
+        setCurrentPaths({
+          foto: p.foto,
+          documento: p.documento,
+          documento_responsaveis: p.documento_responsaveis,
+          laudo: p.laudo,
+        });
+      } catch {
+        setError('Erro inesperado ao carregar os dados.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+
+    loadPaciente();
+  }, [id]);
+
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) {
-    const { name, value } = e.target;
-
-    if (name === 'cpf') {
-      const formatted = formatCpf(value);
-      setFields(prev => ({ ...prev, cpf: formatted }));
-      return;
-    }
-
-    if (name === 'contatos') {
-      const formatted = formatPhoneBr(value);
-      setFields(prev => ({ ...prev, contatos: formatted }));
-      return;
-    }
-
-    if (name === 'renda_bruta_familiar') {
-      const formatted = formatCurrencyBr(value);
-      setFields(prev => ({ ...prev, renda_bruta_familiar: formatted }));
-      return;
-    }
-
-    setFields(prev => ({ ...prev, [name]: value }));
+    setFields(prev => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const { name, files: inputFiles } = e.target;
+    const { name, files: InputFiles } = e.target;
     if (!['foto', 'documento', 'documento_responsaveis', 'laudo'].includes(name))
       return;
-    const file = inputFiles?.[0];
+
+
+    const file = InputFiles?.[0];
     if (file && fileTypes[name as FileField]?.includes(file.type)) {
       setFiles(prev => ({ ...prev, [name]: file }));
     } else {
@@ -102,36 +132,106 @@ export default function CadastroPacientePage() {
     }
   }
 
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!id) {
+      setError('ID do cadastro não foi informado na URL.');
+      return;
+    }
+
+
     setError('');
     setSuccess(false);
-    setLoading(true);
+    setSaving(true);
+
 
     try {
-      await cadastrarPaciente(fields, files);
+      const supabase = createClient();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+
+      if (userError || !user) {
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
+
+
+      const buckets: Record<FileField, string> = {
+        foto: 'foto',
+        documento: 'documento',
+        documento_responsaveis: 'documento_responsaveis',
+        laudo: 'laudo',
+      };
+
+
+      const updatedFiles: Partial<Record<FileField, string>> = {};
+
+
+      // Upload apenas dos arquivos que foram trocados
+      for (const key of Object.keys(files) as FileField[]) {
+        const file = files[key];
+        if (file) {
+          const path = await uploadFileToStorage(file, buckets[key], user.id);
+          updatedFiles[key] = path;
+        }
+      }
+
+
+      const payload = {
+        ...fields,
+        ...currentPaths,  // mantém paths antigos
+        ...updatedFiles,  // sobrescreve com os novos se existirem
+      };
+
+
+      const { error: dbError } = await supabase
+        .from('cadastros')
+        .update(payload)
+        .eq('id', Number(id));
+
+
+      if (dbError) {
+        throw new Error(dbError.message || 'Erro ao atualizar cadastro.');
+      }
+
+
       setSuccess(true);
-      setFields(initialState);
-      setFiles({});
-    } catch (e: any) {
-      setError(e.message);
+      window.location.href = '/PessoaTEA';
+    } catch (err: any) {
+      setError(err.message ?? 'Erro ao atualizar cadastro.');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f5f0e6]">
+        <span className="animate-pulse text-gray-500 text-lg">
+          Carregando dados do cadastro...
+        </span>
+      </main>
+    );
+  }
+
+  
   return (
     <div className="min-h-screen flex flex-col bg-[#f5f0e6]">
-      <Navbar />
+      <Navbar/>
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-10">
         <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-6">
-          Registro de Pessoa com TEA
+          Atualizar cadastro de Pessoa com TEA
         </h1>
+
 
         <form
           onSubmit={handleSubmit}
           className="bg-white/90 backdrop-blur rounded-2xl shadow-lg border border-slate-200 px-6 py-6 md:px-8 md:py-8 space-y-8"
-        >
+          >
           {/* Seção: Dados pessoais */}
           <section>
             <h2 className="text-lg font-semibold text-slate-800 mb-3">
@@ -185,10 +285,8 @@ export default function CadastroPacientePage() {
                   name="cpf"
                   value={fields.cpf}
                   onChange={handleChange}
-                  maxLength={14} // 000.000.000-00
                   className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   type="text"
-                  inputMode="numeric"
                   required
                 />
               </div>
@@ -200,17 +298,17 @@ export default function CadastroPacientePage() {
                   name="contatos"
                   value={fields.contatos}
                   onChange={handleChange}
-                  maxLength={16} // (99) 99999-9999
                   className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   type="text"
-                  inputMode="tel"
                   required
                 />
               </div>
             </div>
           </section>
 
+
           <hr className="border-slate-200" />
+
 
           {/* Seção: Informações clínicas */}
           <section>
@@ -264,7 +362,7 @@ export default function CadastroPacientePage() {
                   name="medicacoes"
                   value={fields.medicacoes}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus-border-emerald-500"
                   rows={2}
                 />
               </div>
@@ -284,7 +382,9 @@ export default function CadastroPacientePage() {
             </div>
           </section>
 
+
           <hr className="border-slate-200" />
+
 
           {/* Seção: Situação socioeconômica e escolar */}
           <section>
@@ -294,8 +394,7 @@ export default function CadastroPacientePage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-sm text-slate-700 mb-1">
-                  Renda bruta familiar{' '}
-                  <span className="text-red-600">*</span>
+                  Renda bruta familiar <span className="text-red-600">*</span>
                 </label>
                 <Input
                   name="renda_bruta_familiar"
@@ -303,20 +402,18 @@ export default function CadastroPacientePage() {
                   onChange={handleChange}
                   className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   type="text"
-                  inputMode="decimal"
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">
-                  Pessoas na residência{' '}
-                  <span className="text-red-600">*</span>
+                  Pessoas na residência <span className="text-red-600">*</span>
                 </label>
                 <Input
                   name="pessoas_residencia"
                   value={fields.pessoas_residencia}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus;border-emerald-500"
                   type="text"
                   required
                 />
@@ -329,77 +426,72 @@ export default function CadastroPacientePage() {
                   name="casa_situacao"
                   value={fields.casa_situacao}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus-border-emerald-500"
                   type="text"
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">
-                  Recebe benefício?{' '}
-                  <span className="text-red-600">*</span>
+                  Recebe benefício? <span className="text-red-600">*</span>
                 </label>
                 <Input
                   name="recebe_beneficio"
                   value={fields.recebe_beneficio}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus-border-emerald-500"
                   type="text"
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">
-                  Instituição de ensino{' '}
-                  <span className="text-red-600">*</span>
+                  Instituição de ensino <span className="text-red-600">*</span>
                 </label>
                 <Input
                   name="instituicao_ensino"
                   value={fields.instituicao_ensino}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus;border-emerald-500"
                   type="text"
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">
-                  Endereço da escola{' '}
-                  <span className="text-red-600">*</span>
+                  Endereço da escola <span className="text-red-600">*</span>
                 </label>
                 <Input
                   name="endereco_escola"
                   value={fields.endereco_escola}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus;border-emerald-500"
                   type="text"
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">
-                  Nível de escolaridade{' '}
-                  <span className="text-red-600">*</span>
+                  Nível de escolaridade <span className="text-red-600">*</span>
                 </label>
                 <Input
                   name="nivel_escolaridade"
                   value={fields.nivel_escolaridade}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus;border-emerald-500"
                   type="text"
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm text-slate-700 mb-1">
-                  Acompanhamento especializado{' '}
-                  <span className="text-red-600">*</span>
+                  Acompanhamento especializado <span className="text-red-600">*</span>
                 </label>
                 <Input
                   name="acompanhamento_especializado"
                   value={fields.acompanhamento_especializado}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus;border-emerald-500"
                   type="text"
                   required
                 />
@@ -412,14 +504,16 @@ export default function CadastroPacientePage() {
                   name="observacoes"
                   value={fields.observacoes}
                   onChange={handleChange}
-                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full border px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus;border-emerald-500"
                   rows={3}
                 />
               </div>
             </div>
           </section>
 
+
           <hr className="border-slate-200" />
+
 
           {/* Seção: Documentos / uploads */}
           <section>
@@ -427,48 +521,61 @@ export default function CadastroPacientePage() {
               Documentos
             </h2>
             <div className="grid gap-4 md:grid-cols-2">
-              {(
-                ['foto', 'documento', 'documento_responsaveis', 'laudo'] as FileField[]
-              ).map(field => (
-                <div key={field}>
-                  <label className="block text-sm text-slate-700 mb-1 capitalize">
-                    {field.replace(/_/g, ' ')}{' '}
-                    <span className="text-xs text-gray-500">
-                      (jpeg, png, pdf)
-                    </span>
-                  </label>
-                  <Input
-                    name={field}
-                    type="file"
-                    accept=".jpeg,.jpg,.png,.pdf"
-                    onChange={handleFileChange}
-                    className="w-full border px-3 py-2 rounded-md bg-white"
-                  />
-                </div>
-              ))}
+              {(['foto', 'documento', 'documento_responsaveis', 'laudo'] as FileField[]).map(
+                field => (
+                  <div key={field}>
+                    <label className="block text-sm text-slate-700 mb-1 capitalize">
+                      {field.replace(/_/g, ' ')}{' '}
+                      <span className="text-xs text-gray-500">(jpeg, png, pdf)</span>
+                    </label>
+                    <Input
+                      name={field}
+                      type="file"
+                      accept=".jpeg,.jpg,.png,.pdf"
+                      onChange={handleFileChange}
+                      className="w-full border px-3 py-2 rounded-md bg-white"
+                    />
+                    {currentPaths[field] && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Arquivo já cadastrado. Deixe em branco para manter o atual.
+                      </p>
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           </section>
+
 
           {error && <p className="text-red-600 text-sm font-medium">{error}</p>}
           {success && (
             <p className="text-emerald-700 text-sm font-medium">
-              Registro realizado com sucesso!
+              Cadastro atualizado com sucesso!
             </p>
           )}
 
-          <div className="flex justify-end">
+
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="destructive"
+              className="px-4 py-2 rounded-md border border-slate-300 text-white hover:bg-red-200"
+              onClick={() => (window.location.href = '/PessoaTEA')}
+            >
+              Cancelar
+            </Button>
             <Button
               type="submit"
               className="bg-emerald-600 text-white px-6 py-2 rounded-md font-semibold hover:bg-emerald-700 disabled:opacity-60"
-              disabled={loading}
+              disabled={saving}
             >
-              {loading ? 'Salvando...' : 'Cadastrar'}
+              {saving ? 'Salvando...' : 'Salvar alterações'}
             </Button>
           </div>
         </form>
       </main>
 
+
       <Footer />
     </div>
   );
-}
+} 

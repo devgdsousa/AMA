@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export function Footer() {
   return (
-    <footer className="mt-10">
+    <footer className="mt-10 no-print">
       <div
         className="
           border-t border-white/10

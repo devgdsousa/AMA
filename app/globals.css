@@ -2,6 +2,12 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
 
 @theme inline {
   --color-background: var(--background);
